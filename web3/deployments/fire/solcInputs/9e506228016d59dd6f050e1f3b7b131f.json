@@ -1,0 +1,35 @@
+{
+  "language": "Solidity",
+  "sources": {
+    "contracts/Campaigns.sol": {
+      "content": "// SPDX-License-Identifier: UNLICENSED\npragma solidity ^0.8.8;\n\n// import \"hardhat/console.sol\";\n\nerror NotOwner();\n\ncontract Campaigns {\n    address public owner;\n    uint256 public campaignCount;\n    statsStruct public stats;\n    campaignStruct[] campaigns;\n\n    mapping(address => campaignStruct[]) campaignOwner;\n    mapping(uint256 => backerStruct[]) backers;\n    mapping(uint256 => bool) public campaignExists;\n\n    enum statusEnum {\n        OPEN,\n        APPROVED,\n        REVERTED,\n        DELETED,\n        FINISHED\n    }\n\n    struct statsStruct {\n        uint256 totalCampaigns;\n        uint256 totalBackers;\n        uint256 totalDonations;\n    }\n\n    struct backerStruct {\n        address backer;\n        uint256 contribution;\n        uint256 timestamp;\n    }\n\n    struct campaignStruct {\n        uint256 id;\n        address owner;\n        string title;\n        string description;\n        string imageURL;\n        uint256 goal;\n        uint256 raised;\n        uint256 timestamp;\n        uint256 expiresOn;\n        uint256 backers;\n        statusEnum status;\n    }\n\n    modifier ownerOnly() {\n        if (msg.sender != owner) revert NotOwner();\n        _;\n    }\n\n    event Action(\n        uint256 id,\n        string actionType,\n        address indexed executor,\n        uint256 timestamp\n    );\n\n    constructor() {\n        owner = msg.sender;\n    }\n\n    function createCampaign(\n        string memory title,\n        string memory description,\n        string memory imageURL,\n        uint256 goal,\n        uint256 expiresOn\n    ) public returns (bool) {\n        require(bytes(title).length > 0, \"Title cannot be empty\");\n        require(bytes(description).length > 0, \"Description cannot be empty\");\n        require(bytes(imageURL).length > 0, \"ImageURL cannot be empty\");\n        require(goal > 0 ether, \"Cost cannot be 0\");\n\n        campaignStruct memory campaign;\n        campaign.id = campaignCount;\n        campaign.owner = msg.sender;\n        campaign.title = title;\n        campaign.description = description;\n        campaign.imageURL = imageURL;\n        campaign.goal = goal;\n        campaign.timestamp = block.timestamp;\n        campaign.expiresOn = expiresOn;\n\n        campaigns.push(campaign);\n        campaignExists[campaignCount] = true;\n        campaignOwner[msg.sender].push(campaign);\n        stats.totalCampaigns += 1;\n\n        emit Action(\n            campaignCount++,\n            \"CAMPAIGN CREATED\",\n            msg.sender,\n            block.timestamp\n        );\n\n        return true;\n    }\n\n    function updateCampaign(\n        uint256 id,\n        string memory title,\n        string memory description,\n        string memory imageURL\n    ) public returns (bool) {\n        if (msg.sender != campaigns[id].owner) revert NotOwner();\n        require(bytes(title).length > 0, \"Title cannot be empty\");\n        require(bytes(description).length > 0, \"Description cannot be empty\");\n        require(bytes(imageURL).length > 0, \"ImageURL cannot be empty\");\n\n        campaigns[id].title = title;\n        campaigns[id].description = description;\n        campaigns[id].imageURL = imageURL;\n\n        emit Action(id, \"CAMPAIGN UPDATED\", msg.sender, block.timestamp);\n\n        return true;\n    }\n\n    function deleteProject(uint256 id) public returns (bool) {\n        require(campaigns[id].status == statusEnum.OPEN, \"Campaign closed\");\n        if (msg.sender != campaigns[id].owner || msg.sender != owner)\n            revert NotOwner();\n\n        campaigns[id].status = statusEnum.DELETED;\n        refund(id);\n\n        emit Action(id, \"CAMPAIGN DELETED\", msg.sender, block.timestamp);\n\n        return true;\n    }\n\n    function backCampaign(uint256 id) public payable returns (bool) {\n        require(msg.value > 0 ether, \"Contribution must be more than 0\");\n        require(campaignExists[id], \"Campaign not found\");\n        require(campaigns[id].status == statusEnum.OPEN, \"Campaign closed\");\n\n        stats.totalBackers += 1;\n        stats.totalDonations += msg.value;\n        campaigns[id].raised += msg.value;\n        campaigns[id].backers += 1;\n\n        backers[id].push(backerStruct(msg.sender, msg.value, block.timestamp));\n\n        emit Action(id, \"CAMPAIGN BACKED\", msg.sender, block.timestamp);\n\n        if (campaigns[id].raised >= campaigns[id].goal) {\n            campaigns[id].status = statusEnum.APPROVED;\n            payout(id);\n            return true;\n        }\n\n        if (block.timestamp >= campaigns[id].expiresOn) {\n            campaigns[id].status = statusEnum.REVERTED;\n            refund(id);\n            return true;\n        }\n\n        return true;\n    }\n\n    function refund(uint256 id) internal {\n        for (uint256 i = 0; i < backers[id].length; i++) {\n            address _backer = backers[id][i].backer;\n            uint256 _contribution = backers[id][i].contribution;\n\n            backers[id][i].timestamp = block.timestamp;\n            payTo(_backer, _contribution);\n\n            stats.totalBackers -= 1;\n            stats.totalDonations -= 1;\n        }\n    }\n\n    function payout(uint256 id) internal {\n        campaigns[id].status = statusEnum.FINISHED;\n\n        payTo(campaigns[id].owner, campaigns[id].raised);\n\n        emit Action(id, \"CAMPAIGN FINISHED\", msg.sender, block.timestamp);\n    }\n\n    function payTo(address to, uint256 amount) internal {\n        (bool success, ) = payable(to).call{value: amount}(\"\");\n        require(success, \"Refund Failed!\");\n    }\n\n    function getCampaign(uint id) public view returns (campaignStruct memory) {\n        require(campaignExists[id], \"Project not found\");\n\n        return campaigns[id];\n    }\n\n    function getCampaigns() public view returns (campaignStruct[] memory) {\n        return campaigns;\n    }\n\n    function getBackers(uint id) public view returns (backerStruct[] memory) {\n        return backers[id];\n    }\n}\n"
+    }
+  },
+  "settings": {
+    "optimizer": {
+      "enabled": false,
+      "runs": 200
+    },
+    "outputSelection": {
+      "*": {
+        "*": [
+          "abi",
+          "evm.bytecode",
+          "evm.deployedBytecode",
+          "evm.methodIdentifiers",
+          "metadata",
+          "devdoc",
+          "userdoc",
+          "storageLayout",
+          "evm.gasEstimates"
+        ],
+        "": [
+          "ast"
+        ]
+      }
+    },
+    "metadata": {
+      "useLiteralContent": true
+    }
+  }
+}
