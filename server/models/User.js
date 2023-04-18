@@ -3,14 +3,13 @@ const mongoose = require('mongoose');
 const UserSchema = new mongoose.Schema({
     name: String,
     email: { type: String, unique: true, required: true },
-    age: Number,
-    gender: String,
-    dateOfBirth: {
+
+    date: {
         type: Date,
         required: true,
-        trim: true,
-    },
-    walletAddress: String,
+        default: Date.now
+        
+    }
 })
 
 const UserModel = mongoose.model('User', UserSchema);
